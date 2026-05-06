@@ -2,6 +2,9 @@ import 'dart:io';
 
 /// An abstract class representing an individual app icon.
 abstract class AppIcon {
+  /// The name tag of the icon for iOS platform.
+  final String? iconTag;
+
   /// The name of the icon for iOS platform.
   final String iOSIcon;
 
@@ -12,10 +15,12 @@ abstract class AppIcon {
   final bool isDefaultIcon;
 
   AppIcon({
+    this.iconTag,
     required this.iOSIcon,
     required this.androidIcon,
     required this.isDefaultIcon,
-  })  : assert(
+  })  : 
+        assert(
           iOSIcon.isNotEmpty,
           'iOS icon should not be empty',
         ),
