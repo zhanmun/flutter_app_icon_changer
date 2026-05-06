@@ -2,7 +2,7 @@ import 'dart:io';
 
 /// An abstract class representing an individual app icon.
 abstract class AppIcon {
-  /// The name tag of the icon for iOS platform.
+  /// NEW: The name tag of the icon for iOS platform.
   final String? iconTag;
 
   /// The name of the icon for iOS platform.
