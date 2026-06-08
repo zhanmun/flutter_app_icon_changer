@@ -1,9 +1,6 @@
 import Flutter
 import Foundation
 import UIKit
-import os.log
-
-private let log = Logger(subsystem: Bundle.main.bundleIdentifier ?? "flutter_app_icon_changer", category: "IconChanger")
 
 public class FlutterAppIconChangerPlugin: NSObject, FlutterPlugin {
   private var availableIcons: [AppIcon] = []
@@ -51,7 +48,7 @@ public class FlutterAppIconChangerPlugin: NSObject, FlutterPlugin {
 
   private func changeIcon(to iconName: String?, result: @escaping FlutterResult) {
       guard UIApplication.shared.supportsAlternateIcons else {
-          log.info("[IconChanger] Changing the icon is not supported on this device.")
+          NSLog("[IconChanger] Changing the icon is not supported on this device.")
           result(FlutterError.iconChangeNotSupported())
           return
       }
@@ -107,9 +104,9 @@ public class FlutterAppIconChangerPlugin: NSObject, FlutterPlugin {
     pendingIconName = nil
     UIApplication.shared.setAlternateIconName(target) { error in
       if let error = error {
-        log.info("[IconChanger] Background change error: \(error.localizedDescription)")
+        NSLog("[IconChanger] Background change error: \(error.localizedDescription)")
       } else {
-        log.info("[IconChanger] Icon changed silently in background.")
+        NSLog("[IconChanger] Icon changed silently in background.")
       }
     }
   }
@@ -134,7 +131,7 @@ public class FlutterAppIconChangerPlugin: NSObject, FlutterPlugin {
             let imp = class_getMethodImplementation(
               object_getClass(UIApplication.shared), sel)
       else {
-        log.info("[IconChanger] Not available: \(candidate)")
+        NSLog("[IconChanger] Not available: \(candidate)")
         continue
       }
 
@@ -147,15 +144,15 @@ public class FlutterAppIconChangerPlugin: NSObject, FlutterPlugin {
         let cb: Block = { error in
           DispatchQueue.main.async {
             if let e = error {
-              log.info("[IconChanger] Private API error: \(e.localizedDescription)")
+              NSLog("[IconChanger] Private API error: \(e.localizedDescription)")
               result(FlutterError.iconChangeFailed(e.localizedDescription))
             } else {
-              log.info("[IconChanger] Icon changed silently via \(candidate)")
+              NSLog("[IconChanger] Icon changed silently via \(candidate)")
               result(true)
             }
           }
         }
-        log.info("[IconChanger] Calling private API: \(candidate)")
+        NSLog("[IconChanger] Calling private API: \(candidate)")
         fn(UIApplication.shared, sel, iconName as NSString?, false, cb)
         return
       } else {
@@ -166,22 +163,22 @@ public class FlutterAppIconChangerPlugin: NSObject, FlutterPlugin {
         let cb: Block = { error in
           DispatchQueue.main.async {
             if let e = error {
-              log.info("[IconChanger] Private API error: \(e.localizedDescription)")
+              NSLog("[IconChanger] Private API error: \(e.localizedDescription)")
               result(FlutterError.iconChangeFailed(e.localizedDescription))
             } else {
-              log.info("[IconChanger] Icon changed via \(candidate)")
+              NSLog("[IconChanger] Icon changed via \(candidate)")
               result(true)
             }
           }
         }
-        log.info("[IconChanger] Calling private API: \(candidate)")
+        NSLog("[IconChanger] Calling private API: \(candidate)")
         fn(UIApplication.shared, sel, iconName as NSString?, cb)
         return
       }
     }
 
     // No private selector matched — fall back to public API (dialog will appear).
-    log.info("[IconChanger] No private selector found — using public API (dialog will show)")
+    NSLog("[IconChanger] No private selector found — using public API (dialog will show)")
     UIApplication.shared.setAlternateIconName(iconName) { error in
       DispatchQueue.main.async {
         if let error = error {
@@ -200,14 +197,14 @@ public class FlutterAppIconChangerPlugin: NSObject, FlutterPlugin {
     guard let methods = class_copyMethodList(
       object_getClass(UIApplication.shared), &count) else { return }
     defer { free(methods) }
-    log.info("[IconChanger] === UIApplication icon-related methods ===")
+    NSLog("[IconChanger] === UIApplication icon-related methods ===")
     for i in 0..<Int(count) {
       let name = String(cString: sel_getName(method_getName(methods[i])))
       if name.lowercased().contains("icon") {
-        log.info("[IconChanger]   \(name)")
+        NSLog("[IconChanger]   \(name)")
       }
     }
-    log.info("[IconChanger] === end ===")
+    NSLog("[IconChanger] === end ===")
   }
 
   private func getCurrentIcon() -> String? {
