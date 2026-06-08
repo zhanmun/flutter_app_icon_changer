@@ -112,31 +112,43 @@ public class FlutterAppIconChangerPlugin: NSObject, FlutterPlugin {
   }
 
   private func setIcon(icon iconName: String?, result: @escaping FlutterResult) {
-    // Build selector at runtime so static analysis does not flag private API usage.
-    // This calls the same internal method the OS uses, but with userNotification=false
-    // so no system dialog is shown — the same technique used by major apps.
-    let sel = NSSelectorFromString(
-      ["_setAlternateIconName:withUser", "Notification:withCompletion:"].joined()
-    )
-
-    if UIApplication.shared.responds(to: sel) {
-      typealias Fn = @convention(c) (AnyObject, Selector, AnyObject?, Bool, AnyObject?) -> Void
-      let imp = class_getMethodImplementation(object_getClass(UIApplication.shared), sel)
-      let fn = unsafeBitCast(imp, to: Fn.self)
-      fn(UIApplication.shared, sel, iconName as AnyObject?, false, nil)
-      print("The icon has been silently changed.")
-      result(true)
-      return
+    // Find the topmost visible view controller to present on
+    guard let keyWindow = UIApplication.shared.connectedScenes
+        .compactMap({ $0 as? UIWindowScene })
+        .flatMap({ $0.windows })
+        .first(where: { $0.isKeyWindow }),
+      let rootVC = keyWindow.rootViewController else {
+        result(FlutterError.iconChangeFailed("No root view controller"))
+        return
     }
 
-    // Fallback: public API (shows system dialog on iOS 15+)
-    UIApplication.shared.setAlternateIconName(iconName) { error in
-      if let error = error {
-        print("Error when changing icon: \(error.localizedDescription)")
-        result(FlutterError.iconChangeFailed(error.localizedDescription))
-      } else {
-        print("The icon has been changed.")
-        result(true)
+    var topVC = rootVC
+    while let presented = topVC.presentedViewController {
+      topVC = presented
+    }
+
+    // Present a blank opaque VC with a zero-duration custom transition.
+    // setAlternateIconName is called inside the presentation completion, so
+    // the system alert (if shown) appears on top of the blank VC and is
+    // dismissed along with it before the user can read it.
+    let blankVC = UIViewController()
+    blankVC.view.backgroundColor = topVC.view.backgroundColor ?? .systemBackground
+    blankVC.modalPresentationStyle = .custom
+    blankVC.transitioningDelegate = SilentTransitionDelegate.shared
+
+    topVC.present(blankVC, animated: false) {
+      UIApplication.shared.setAlternateIconName(iconName) { error in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+          blankVC.dismiss(animated: false) {
+            if let error = error {
+              print("[IconChanger] Error: \(error.localizedDescription)")
+              result(FlutterError.iconChangeFailed(error.localizedDescription))
+            } else {
+              print("[IconChanger] Icon changed silently via blank VC overlay.")
+              result(true)
+            }
+          }
+        }
       }
     }
   }
@@ -174,6 +186,27 @@ struct AppIcon {
     var description: String {
         return "AppIcon(icon: \(icon), isDefaultIcon: \(isDefaultIcon))"
     }
+}
+
+// Zero-duration animator so the blank VC appears and disappears instantly,
+// giving the system alert no time window to render visibly to the user.
+private class SilentAnimator: NSObject, UIViewControllerAnimatedTransitioning {
+  func transitionDuration(using transitionContext: UIViewControllerContextTransitioning?) -> TimeInterval {
+    return 0
+  }
+  func animateTransition(using transitionContext: UIViewControllerContextTransitioning) {
+    transitionContext.completeTransition(true)
+  }
+}
+
+private class SilentTransitionDelegate: NSObject, UIViewControllerTransitioningDelegate {
+  static let shared = SilentTransitionDelegate()
+  func animationController(forPresented presented: UIViewController, presenting: UIViewController, source: UIViewController) -> UIViewControllerAnimatedTransitioning? {
+    return SilentAnimator()
+  }
+  func animationController(forDismissed dismissed: UIViewController) -> UIViewControllerAnimatedTransitioning? {
+    return SilentAnimator()
+  }
 }
 
 extension FlutterError {
