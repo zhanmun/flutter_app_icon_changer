@@ -49,4 +49,11 @@ abstract class FlutterAppIconChangerPlatform extends PlatformInterface {
   Future<void> setAvailableIcons(List<AppIcon> iconsSet) async {
     throw UnimplementedError('setAvailableIcons() has not been implemented.');
   }
+
+  /// iOS only: schedules the icon to change the next time the app enters
+  /// background. The change uses the native background notification so no
+  /// system dialog is shown.
+  Future<bool?> scheduleIconChangeOnBackground(String iconName) {
+    throw UnimplementedError('scheduleIconChangeOnBackground() has not been implemented.');
+  }
 }

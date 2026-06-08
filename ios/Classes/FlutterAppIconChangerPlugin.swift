@@ -4,6 +4,7 @@ import UIKit
 
 public class FlutterAppIconChangerPlugin: NSObject, FlutterPlugin {
   private var availableIcons: [AppIcon] = []
+  private var pendingIconName: String? = nil
 
   public static func register(with registrar: FlutterPluginRegistrar) {
     let channel = FlutterMethodChannel(name: "flutter_app_icon_changer", binaryMessenger: registrar.messenger())
@@ -31,6 +32,13 @@ public class FlutterAppIconChangerPlugin: NSObject, FlutterPlugin {
             result(nil)
         } else {
             result(FlutterError.invalidArgs("Arguments is invalid"))
+        }
+
+    case "scheduleIconChange":
+        if let args = call.arguments as? [String: Any], let iconName = args["iconName"] as? String {
+            self.scheduleIconChange(to: iconName, result: result)
+        } else {
+            result(FlutterError.invalidArgs("Arguments are invalid"))
         }
 
     default:
@@ -62,6 +70,45 @@ public class FlutterAppIconChangerPlugin: NSObject, FlutterPlugin {
           setIcon(icon: defaultIcon, result: result)
           result(FlutterError.iconNotFound("Icon \(iconName) not found"))
       }
+  }
+
+  // Stores the target icon and applies it silently when the app enters background.
+  // The public setAlternateIconName cannot show a dialog when the app has no
+  // active view hierarchy, so the change happens with no user-facing popup.
+  private func scheduleIconChange(to iconName: String, result: @escaping FlutterResult) {
+    guard UIApplication.shared.supportsAlternateIcons else {
+      result(FlutterError.iconChangeNotSupported())
+      return
+    }
+
+    // Resolve to nil for default icon, or the actual icon name otherwise
+    if let iconToChange = availableIcons.first(where: { $0.icon == iconName }) {
+      pendingIconName = iconToChange.isDefaultIcon ? nil : iconToChange.icon
+    } else {
+      pendingIconName = nil
+    }
+
+    NotificationCenter.default.removeObserver(
+      self, name: UIApplication.didEnterBackgroundNotification, object: nil)
+    NotificationCenter.default.addObserver(
+      self, selector: #selector(applyPendingIconInBackground),
+      name: UIApplication.didEnterBackgroundNotification, object: nil)
+
+    result(true)
+  }
+
+  @objc private func applyPendingIconInBackground() {
+    NotificationCenter.default.removeObserver(
+      self, name: UIApplication.didEnterBackgroundNotification, object: nil)
+    let target = pendingIconName
+    pendingIconName = nil
+    UIApplication.shared.setAlternateIconName(target) { error in
+      if let error = error {
+        print("[IconChanger] Background change error: \(error.localizedDescription)")
+      } else {
+        print("[IconChanger] Icon changed silently in background.")
+      }
+    }
   }
 
   private func setIcon(icon iconName: String?, result: @escaping FlutterResult) {

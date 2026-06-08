@@ -46,4 +46,11 @@ class FlutterAppIconChangerPlugin {
   Future<void> testSetAvailableIcons() {
     return _setAvailableIcons();
   }
+
+  /// iOS only: schedules the icon to change the next time the app enters
+  /// background. No system dialog is shown.
+  Future<bool?> scheduleIconChangeOnBackground(String iconName) {
+    return FlutterAppIconChangerPlatform.instance
+        .scheduleIconChangeOnBackground(iconName);
+  }
 }

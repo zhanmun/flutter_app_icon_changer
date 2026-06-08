@@ -40,4 +40,10 @@ class MethodChannelFlutterAppIconChanger extends FlutterAppIconChangerPlatform {
     final dataSet = iconsSet.toDataSet();
     await methodChannel.invokeMethod('setAvailableIcons', {'icons': dataSet});
   }
+
+  @override
+  Future<bool?> scheduleIconChangeOnBackground(String iconName) {
+    return methodChannel.invokeMethod<bool>(
+        'scheduleIconChange', {'iconName': iconName});
+  }
 }
