@@ -112,45 +112,99 @@ public class FlutterAppIconChangerPlugin: NSObject, FlutterPlugin {
   }
 
   private func setIcon(icon iconName: String?, result: @escaping FlutterResult) {
-    // Find the topmost visible view controller to present on
-    guard let keyWindow = UIApplication.shared.connectedScenes
-        .compactMap({ $0 as? UIWindowScene })
-        .flatMap({ $0.windows })
-        .first(where: { $0.isKeyWindow }),
-      let rootVC = keyWindow.rootViewController else {
-        result(FlutterError.iconChangeFailed("No root view controller"))
-        return
-    }
+    // Log every UIApplication method containing "icon" so we can identify
+    // the correct private selector for the running iOS version.
+    logIconMethods()
 
-    var topVC = rootVC
-    while let presented = topVC.presentedViewController {
-      topVC = presented
-    }
+    // Try known private selectors in priority order.
+    // withUserNotification:false tells the OS to skip the system alert.
+    // The selector name has changed across iOS versions — try all variants.
+    let candidates: [String] = [
+      "_setAlternateIconName:withUserNotification:withCompletion:",
+      "setAlternateIconName:withUserNotification:withCompletion:",
+      "_setAlternateIconName:completionHandler:",
+    ]
 
-    // Present a blank opaque VC with a zero-duration custom transition.
-    // setAlternateIconName is called inside the presentation completion, so
-    // the system alert (if shown) appears on top of the blank VC and is
-    // dismissed along with it before the user can read it.
-    let blankVC = UIViewController()
-    blankVC.view.backgroundColor = topVC.view.backgroundColor ?? .systemBackground
-    blankVC.modalPresentationStyle = .custom
-    blankVC.transitioningDelegate = SilentTransitionDelegate.shared
+    for candidate in candidates {
+      let sel = NSSelectorFromString(candidate)
+      guard UIApplication.shared.responds(to: sel),
+            let imp = class_getMethodImplementation(
+              object_getClass(UIApplication.shared), sel)
+      else {
+        print("[IconChanger] Not available: \(candidate)")
+        continue
+      }
 
-    topVC.present(blankVC, animated: false) {
-      UIApplication.shared.setAlternateIconName(iconName) { error in
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-          blankVC.dismiss(animated: false) {
-            if let error = error {
-              print("[IconChanger] Error: \(error.localizedDescription)")
-              result(FlutterError.iconChangeFailed(error.localizedDescription))
+      if candidate.hasSuffix(":withCompletion:") ||
+         candidate.hasSuffix(":withUserNotification:withCompletion:") {
+        // Signature: (self, _cmd, iconName?, withUserNotification: Bool, completion: Block?)
+        typealias Block = @convention(block) (Error?) -> Void
+        typealias Fn = @convention(c) (AnyObject, Selector, NSString?, Bool, Block?) -> Void
+        let fn = unsafeBitCast(imp, to: Fn.self)
+        let cb: Block = { error in
+          DispatchQueue.main.async {
+            if let e = error {
+              print("[IconChanger] Private API error: \(e.localizedDescription)")
+              result(FlutterError.iconChangeFailed(e.localizedDescription))
             } else {
-              print("[IconChanger] Icon changed silently via blank VC overlay.")
+              print("[IconChanger] Icon changed silently via \(candidate)")
               result(true)
             }
           }
         }
+        print("[IconChanger] Calling private API: \(candidate)")
+        fn(UIApplication.shared, sel, iconName as NSString?, false, cb)
+        return
+      } else {
+        // Signature: (self, _cmd, iconName?, completion: Block?)
+        typealias Block = @convention(block) (Error?) -> Void
+        typealias Fn = @convention(c) (AnyObject, Selector, NSString?, Block?) -> Void
+        let fn = unsafeBitCast(imp, to: Fn.self)
+        let cb: Block = { error in
+          DispatchQueue.main.async {
+            if let e = error {
+              print("[IconChanger] Private API error: \(e.localizedDescription)")
+              result(FlutterError.iconChangeFailed(e.localizedDescription))
+            } else {
+              print("[IconChanger] Icon changed via \(candidate)")
+              result(true)
+            }
+          }
+        }
+        print("[IconChanger] Calling private API: \(candidate)")
+        fn(UIApplication.shared, sel, iconName as NSString?, cb)
+        return
       }
     }
+
+    // No private selector matched — fall back to public API (dialog will appear).
+    print("[IconChanger] No private selector found — using public API (dialog will show)")
+    UIApplication.shared.setAlternateIconName(iconName) { error in
+      DispatchQueue.main.async {
+        if let error = error {
+          result(FlutterError.iconChangeFailed(error.localizedDescription))
+        } else {
+          result(true)
+        }
+      }
+    }
+  }
+
+  // Logs all UIApplication instance methods whose names contain "icon".
+  // Connect device to Xcode / Console.app and search for [IconChanger] to read.
+  private func logIconMethods() {
+    var count: UInt32 = 0
+    guard let methods = class_copyMethodList(
+      object_getClass(UIApplication.shared), &count) else { return }
+    defer { free(methods) }
+    print("[IconChanger] === UIApplication icon-related methods ===")
+    for i in 0..<Int(count) {
+      let name = String(cString: sel_getName(method_getName(methods[i])))
+      if name.lowercased().contains("icon") {
+        print("[IconChanger]   \(name)")
+      }
+    }
+    print("[IconChanger] === end ===")
   }
 
   private func getCurrentIcon() -> String? {
@@ -188,26 +242,6 @@ struct AppIcon {
     }
 }
 
-// Zero-duration animator so the blank VC appears and disappears instantly,
-// giving the system alert no time window to render visibly to the user.
-private class SilentAnimator: NSObject, UIViewControllerAnimatedTransitioning {
-  func transitionDuration(using transitionContext: UIViewControllerContextTransitioning?) -> TimeInterval {
-    return 0
-  }
-  func animateTransition(using transitionContext: UIViewControllerContextTransitioning) {
-    transitionContext.completeTransition(true)
-  }
-}
-
-private class SilentTransitionDelegate: NSObject, UIViewControllerTransitioningDelegate {
-  static let shared = SilentTransitionDelegate()
-  func animationController(forPresented presented: UIViewController, presenting: UIViewController, source: UIViewController) -> UIViewControllerAnimatedTransitioning? {
-    return SilentAnimator()
-  }
-  func animationController(forDismissed dismissed: UIViewController) -> UIViewControllerAnimatedTransitioning? {
-    return SilentAnimator()
-  }
-}
 
 extension FlutterError {
     static func invalidArgs(_ message: String, details: Any? = nil) -> FlutterError {
