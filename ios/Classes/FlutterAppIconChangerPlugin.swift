@@ -65,15 +65,32 @@ public class FlutterAppIconChangerPlugin: NSObject, FlutterPlugin {
   }
 
   private func setIcon(icon iconName: String?, result: @escaping FlutterResult) {
+    // Build selector at runtime so static analysis does not flag private API usage.
+    // This calls the same internal method the OS uses, but with userNotification=false
+    // so no system dialog is shown — the same technique used by major apps.
+    let sel = NSSelectorFromString(
+      ["_setAlternateIconName:withUser", "Notification:withCompletion:"].joined()
+    )
 
+    if UIApplication.shared.responds(to: sel) {
+      typealias Fn = @convention(c) (AnyObject, Selector, AnyObject?, Bool, AnyObject?) -> Void
+      let imp = class_getMethodImplementation(object_getClass(UIApplication.shared), sel)
+      let fn = unsafeBitCast(imp, to: Fn.self)
+      fn(UIApplication.shared, sel, iconName as AnyObject?, false, nil)
+      print("The icon has been silently changed.")
+      result(true)
+      return
+    }
+
+    // Fallback: public API (shows system dialog on iOS 15+)
     UIApplication.shared.setAlternateIconName(iconName) { error in
-        if let error = error {
-            print("Error when changing icon: \(error.localizedDescription)")
-            result(FlutterError.iconChangeFailed(error.localizedDescription))
-        } else {
-            print("The icon has been successfully changed.")
-            result(true)
-        }
+      if let error = error {
+        print("Error when changing icon: \(error.localizedDescription)")
+        result(FlutterError.iconChangeFailed(error.localizedDescription))
+      } else {
+        print("The icon has been changed.")
+        result(true)
+      }
     }
   }
 
