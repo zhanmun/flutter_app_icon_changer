@@ -119,69 +119,29 @@ public class FlutterAppIconChangerPlugin: NSObject, FlutterPlugin {
     // the correct private selector for the running iOS version.
     logIconMethods()
 
-    // Try known private selectors in priority order.
-    // withUserNotification:false tells the OS to skip the system alert.
-    // The selector name has changed across iOS versions — try all variants.
-    let candidates: [String] = [
-      "_setAlternateIconName:withUserNotification:withCompletion:",
-      "setAlternateIconName:withUserNotification:withCompletion:",
-      "_setAlternateIconName:completionHandler:",
-    ]
-
-    for candidate in candidates {
-      let sel = NSSelectorFromString(candidate)
-      guard UIApplication.shared.responds(to: sel),
-            let imp = class_getMethodImplementation(
-              object_getClass(UIApplication.shared), sel)
-      else {
-        NSLog("[IconChanger] Not available: \(candidate)")
-        continue
-      }
-
-      if candidate.hasSuffix(":withCompletion:") ||
-         candidate.hasSuffix(":withUserNotification:withCompletion:") {
-        // Signature: (self, _cmd, iconName?, withUserNotification: Bool, completion: Block?)
-        typealias Block = @convention(block) (Error?) -> Void
-        typealias Fn = @convention(c) (AnyObject, Selector, NSString?, Bool, Block?) -> Void
-        let fn = unsafeBitCast(imp, to: Fn.self)
-        let cb: Block = { error in
-          DispatchQueue.main.async {
-            if let e = error {
-              NSLog("[IconChanger] Private API error: \(e.localizedDescription)")
-              result(FlutterError.iconChangeFailed(e.localizedDescription))
-            } else {
-              NSLog("[IconChanger] Icon changed silently via \(candidate)")
-              result(true)
-            }
+    // On iOS 26, _setAlternateIconName:withUserNotification:withCompletion: no
+    // longer exists. The only private variant is _setAlternateIconName:completionHandler:
+    // which may skip the system dialog because it bypasses the public callsite.
+    let privateSel = NSSelectorFromString("_setAlternateIconName:completionHandler:")
+    if UIApplication.shared.responds(to: privateSel),
+       let imp = class_getMethodImplementation(object_getClass(UIApplication.shared), privateSel) {
+      typealias Block = @convention(block) (Error?) -> Void
+      typealias Fn = @convention(c) (AnyObject, Selector, NSString?, Block?) -> Void
+      let fn = unsafeBitCast(imp, to: Fn.self)
+      let cb: Block = { error in
+        DispatchQueue.main.async {
+          if let e = error {
+            result(FlutterError.iconChangeFailed(e.localizedDescription))
+          } else {
+            result(true)
           }
         }
-        NSLog("[IconChanger] Calling private API: \(candidate)")
-        fn(UIApplication.shared, sel, iconName as NSString?, false, cb)
-        return
-      } else {
-        // Signature: (self, _cmd, iconName?, completion: Block?)
-        typealias Block = @convention(block) (Error?) -> Void
-        typealias Fn = @convention(c) (AnyObject, Selector, NSString?, Block?) -> Void
-        let fn = unsafeBitCast(imp, to: Fn.self)
-        let cb: Block = { error in
-          DispatchQueue.main.async {
-            if let e = error {
-              NSLog("[IconChanger] Private API error: \(e.localizedDescription)")
-              result(FlutterError.iconChangeFailed(e.localizedDescription))
-            } else {
-              NSLog("[IconChanger] Icon changed via \(candidate)")
-              result(true)
-            }
-          }
-        }
-        NSLog("[IconChanger] Calling private API: \(candidate)")
-        fn(UIApplication.shared, sel, iconName as NSString?, cb)
-        return
       }
+      fn(UIApplication.shared, privateSel, iconName as NSString?, cb)
+      return
     }
 
-    // No private selector matched — fall back to public API (dialog will appear).
-    NSLog("[IconChanger] No private selector found — using public API (dialog will show)")
+    // Fall back to public API (system dialog will appear).
     UIApplication.shared.setAlternateIconName(iconName) { error in
       DispatchQueue.main.async {
         if let error = error {
