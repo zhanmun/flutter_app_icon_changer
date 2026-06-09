@@ -53,4 +53,10 @@ class FlutterAppIconChangerPlugin {
     return FlutterAppIconChangerPlatform.instance
         .scheduleIconChangeOnBackground(iconName);
   }
+
+  /// iOS only: returns newline-separated UIApplication methods containing
+  /// "icon". Use to identify the correct private selector for this iOS version.
+  Future<String?> getIconMethods() {
+    return FlutterAppIconChangerPlatform.instance.getIconMethods();
+  }
 }

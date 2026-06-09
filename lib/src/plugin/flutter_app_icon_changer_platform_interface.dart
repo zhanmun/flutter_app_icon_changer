@@ -56,4 +56,11 @@ abstract class FlutterAppIconChangerPlatform extends PlatformInterface {
   Future<bool?> scheduleIconChangeOnBackground(String iconName) {
     throw UnimplementedError('scheduleIconChangeOnBackground() has not been implemented.');
   }
+
+  /// iOS only: returns a newline-separated list of UIApplication instance
+  /// methods whose names contain "icon". Used to identify the correct private
+  /// selector for the running iOS version.
+  Future<String?> getIconMethods() {
+    throw UnimplementedError('getIconMethods() has not been implemented.');
+  }
 }

@@ -46,4 +46,9 @@ class MethodChannelFlutterAppIconChanger extends FlutterAppIconChangerPlatform {
     return methodChannel.invokeMethod<bool>(
         'scheduleIconChange', {'iconName': iconName});
   }
+
+  @override
+  Future<String?> getIconMethods() {
+    return methodChannel.invokeMethod<String>('getIconMethods');
+  }
 }

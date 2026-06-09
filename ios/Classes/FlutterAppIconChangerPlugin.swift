@@ -41,6 +41,9 @@ public class FlutterAppIconChangerPlugin: NSObject, FlutterPlugin {
             result(FlutterError.invalidArgs("Arguments are invalid"))
         }
 
+    case "getIconMethods":
+        result(self.getIconMethods())
+
     default:
       result(FlutterMethodNotImplemented)
     }
@@ -190,21 +193,27 @@ public class FlutterAppIconChangerPlugin: NSObject, FlutterPlugin {
     }
   }
 
-  // Logs all UIApplication instance methods whose names contain "icon".
-  // Connect device to Xcode / Console.app and search for [IconChanger] to read.
-  private func logIconMethods() {
+  // Returns all UIApplication instance methods whose names contain "icon"
+  // as a newline-separated String so Flutter can display them on screen.
+  private func getIconMethods() -> String {
     var count: UInt32 = 0
     guard let methods = class_copyMethodList(
-      object_getClass(UIApplication.shared), &count) else { return }
+      object_getClass(UIApplication.shared), &count) else {
+      return "(no methods found)"
+    }
     defer { free(methods) }
-    NSLog("[IconChanger] === UIApplication icon-related methods ===")
+    var names: [String] = []
     for i in 0..<Int(count) {
       let name = String(cString: sel_getName(method_getName(methods[i])))
       if name.lowercased().contains("icon") {
-        NSLog("[IconChanger]   \(name)")
+        names.append(name)
       }
     }
-    NSLog("[IconChanger] === end ===")
+    return names.sorted().joined(separator: "\n")
+  }
+
+  private func logIconMethods() {
+    NSLog("[IconChanger] icon methods:\n\(getIconMethods())")
   }
 
   private func getCurrentIcon() -> String? {
