@@ -193,23 +193,32 @@ public class FlutterAppIconChangerPlugin: NSObject, FlutterPlugin {
     }
   }
 
-  // Returns all UIApplication instance methods whose names contain "icon"
-  // as a newline-separated String so Flutter can display them on screen.
+  // Traverses the full UIApplication class hierarchy and returns every method
+  // whose name contains "icon" or "alternate" (case-insensitive).
+  // Also reports the total method count per class so we know if enumeration works.
   private func getIconMethods() -> String {
-    var count: UInt32 = 0
-    guard let methods = class_copyMethodList(
-      object_getClass(UIApplication.shared), &count) else {
-      return "(no methods found)"
-    }
-    defer { free(methods) }
-    var names: [String] = []
-    for i in 0..<Int(count) {
-      let name = String(cString: sel_getName(method_getName(methods[i])))
-      if name.lowercased().contains("icon") {
-        names.append(name)
+    var lines: [String] = []
+    var cls: AnyClass? = object_getClass(UIApplication.shared)
+    while let c = cls {
+      let className = String(cString: class_getName(c))
+      var count: UInt32 = 0
+      let methods = class_copyMethodList(c, &count)
+      var found: [String] = []
+      if let methods = methods {
+        for i in 0..<Int(count) {
+          let name = String(cString: sel_getName(method_getName(methods[i])))
+          let lower = name.lowercased()
+          if lower.contains("icon") || lower.contains("alternate") {
+            found.append(name)
+          }
+        }
+        free(methods)
       }
+      lines.append("[\(className)] total=\(count) matched=\(found.count)")
+      for m in found.sorted() { lines.append("  \(m)") }
+      cls = class_getSuperclass(c)
     }
-    return names.sorted().joined(separator: "\n")
+    return lines.isEmpty ? "(no classes found)" : lines.joined(separator: "\n")
   }
 
   private func logIconMethods() {
